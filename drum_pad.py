@@ -5,10 +5,10 @@ frame_width = 1280
 
 
 class DrumPad:
-    def __init__(self, points, colour, sound):
+    def __init__(self, points, colour, midi_note):
         self.pts = points
         self.colour = colour
-        self.sound = sound
+        self.midi_note = midi_note
         self.face_side = np.sign((points[1][0] - points[0][0]) * ((frame_height / 2) - points[1][1]) -
                                  (points[1][1] - points[0][1]) * ((frame_width / 2) - points[1][0]))
         self.x = 0
@@ -20,5 +20,5 @@ class DrumPad:
         return self.face_side
 
     def hit(self):
-        print(self.x, self.sound)
-        self.x += 1
+        print(self.midi_note)
+        return self.midi_note

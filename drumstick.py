@@ -154,7 +154,7 @@ class Drumstick:
     def check_for_hit(self, drum_pads):
 
         if self.old_location is None:
-            return
+            return -1
 
         for dp in drum_pads:
             # Get the drum pad points
@@ -168,4 +168,5 @@ class Drumstick:
                 if not same_side(self.old_location, self.new_location, dp_1, dp_2):
                     # Check if drum pad points are on different sides of the line from old_location to new_location
                     if not same_side(dp_1, dp_2, self.old_location, self.new_location):
-                        dp.hit()
+                        return dp.hit()
+        return -1

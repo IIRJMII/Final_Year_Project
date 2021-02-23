@@ -6,6 +6,8 @@ import colorsys
 import drumstick
 import drum_pad
 import keypoint
+from midiBuffer import midiBuffer
+
 
 # Frame dimensions
 frame_width = 1280
@@ -28,22 +30,43 @@ fps = []
 
 # Create Drum pads
 drum_pads = []
-kick = drum_pad.DrumPad(((500, 600), (780, 600)), (0, 0, 255), "Kick")
+
+kick = drum_pad.DrumPad(((500, 600), (780, 600)), (0, 0, 255), 36)
 drum_pads.append(kick)
 
+snare = drum_pad.DrumPad(((200, 500), (400, 600)), (0, 100, 255), 38)
+drum_pads.append(snare)
+
+closed_hihat = drum_pad.DrumPad(((1080, 500), (880, 600)), (0, 255, 255), 42)
+drum_pads.append(closed_hihat)
+
+'''
 # Empty array to hold user interface
 user_interface = np.zeros((frame_height, frame_width, 3), np.uint8)
-cv2.line(user_interface, kick.pts[0], kick.pts[1], kick.colour, 2)
+#cv2.line(user_interface, kick.pts[0], kick.pts[1], kick.colour, 2)
+
+
+for dp in drum_pads:
+    cv2.line(user_interface, dp.pts[0], dp.pts[1], dp.colour, 2)
+'''
 
 
 def get_distance(pt1, pt2):
     return (((pt2[0] - pt1[0]) ** 2) + ((pt2[1] - pt1[1]) ** 2)) ** 0.5
 
 
+def draw_drumpads(frame):
+    for dp in drum_pads:
+        cv2.line(frame, dp.pts[0], dp.pts[1], dp.colour, 2)
+
+
 while True:
     if state == "exit":
         cap.release()
         cv2.destroyAllWindows()
+        # Close the midi buffer if one has been created
+        if mb is not None:
+            mb.close()
         break
 
     if state == "detect_drumsticks":
@@ -57,9 +80,9 @@ while True:
         detect_box_y1 = int((frame_height / 2) - (detect_box_height / 2))
         detect_box_y2 = int((frame_height / 2) + (detect_box_height / 2))
 
-        state = "detect_drumstick_1"
+        drumstick_to_detect = "drumstick_1"
 
-        while state == "detect_drumstick_1":
+        while state == "detect_drumsticks":
             # Record time at the start of the loop
             start = time.time()
 
@@ -84,8 +107,18 @@ while True:
             g = int(255 * rgb_normalised[1])
             r = int(255 * rgb_normalised[0])
 
+            # Create white overlay with section missing for the detection region
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (frame_width, detect_box_y1), (255, 255, 255), -1)
+            cv2.rectangle(overlay, (0, 0), (detect_box_x1, frame_height), (255, 255, 255), -1)
+            cv2.rectangle(overlay, (0, detect_box_y2), (frame_width, frame_height), (255, 255, 255), -1)
+            cv2.rectangle(overlay, (detect_box_x2, 0), (frame_width, frame_height), (255, 255, 255), -1)
+
+            # Add the overlay
+            frame = cv2.addWeighted(overlay, 0.9, frame, 0.1, 0)
+
             # Draw detection box with border the same colour as the detected colour
-            cv2.rectangle(frame, (detect_box_x1, detect_box_y1), (detect_box_x2, detect_box_y2), (b, g, r), 2)
+            cv2.rectangle(frame, (detect_box_x1, detect_box_y1), (detect_box_x2, detect_box_y2), (b, g, r), 4)
 
             cv2.imshow("Detecting drumsticks", frame)
 
@@ -93,55 +126,14 @@ while True:
             if key == ord('q'):
                 state = "exit"
             elif key == ord(' '):
-                drumstick_1.set_hsv((hue, sat, val))
-                state = "detect_drumsticks_2"
+                if drumstick_to_detect == "drumstick_1":
+                    drumstick_1.set_hsv((hue, sat, val))
+                    drumstick_to_detect = "drumstick_2"
+                else:
+                    drumstick_2.set_hsv((hue, sat, val))
+                    state = "track_drumsticks"
 
             # Record time at the end of the loop, calculate fps, then calculate average fps over the last 10 frames
-            end = time.time()
-            fps.append(1 / (end - start))
-            if len(fps) > 10:
-                fps.pop(0)
-            print(int(sum(fps) / len(fps)), "fps")
-
-        while state == "detect_drumsticks_2":
-            # Record time at the start of the loop
-            start = time.time()
-
-            # Read frame
-            ret, frame = cap.read()
-
-            # Flip frame to mirror image
-            frame = cv2.flip(frame, 1)
-
-            # Get the data inside the detection box and convert to HSV
-            detect_box_data = frame[detect_box_y1:detect_box_y2, detect_box_x1:detect_box_x2]
-            detect_box_data = cv2.cvtColor(detect_box_data, cv2.COLOR_BGR2HSV)
-
-            # Calculate the average hue, saturation, and value
-            hue = int(np.median(detect_box_data[:, :, 0]))
-            sat = int(np.median(detect_box_data[:, :, 1]))
-            val = int(np.median(detect_box_data[:, :, 2]))
-
-            # Convert the HSV value to bgr to use for border
-            rgb_normalised = colorsys.hsv_to_rgb(hue / 180, sat / 255, val / 255)
-            b = int(255 * rgb_normalised[2])
-            g = int(255 * rgb_normalised[1])
-            r = int(255 * rgb_normalised[0])
-
-            # Draw detection box with border the same colour as the detected colour
-            cv2.rectangle(frame, (detect_box_x1, detect_box_y1), (detect_box_x2, detect_box_y2), (b, g, r), 2)
-
-            cv2.imshow("Detecting drumsticks", frame)
-
-            key = cv2.waitKey(1)
-            if key == ord('q'):
-                state = "exit"
-            elif key == ord(' '):
-                #state = "track_drumsticks"
-                state = "record_frames"
-                drumstick_2.set_hsv((hue, sat, val))
-
-            # Record time at the end of the loop, calculate fps, then calculate average fps over the last 100 frames
             end = time.time()
             fps.append(1 / (end - start))
             if len(fps) > 10:
@@ -171,6 +163,8 @@ while True:
         params.maxCircularity = 1
 
         detector = cv2.SimpleBlobDetector_create(params)
+
+        mb = midiBuffer(device=[], verbose=True)
 
         while state == "track_drumsticks":
             # Record the time at the start of the loop
@@ -234,12 +228,19 @@ while True:
                 drumstick_2.find(my_keypoints)
 
             # Check for hits
-            drumstick_1.check_for_hit(drum_pads)
-            drumstick_2.check_for_hit(drum_pads)
+            #drumstick_1.check_for_hit(drum_pads)
+            #drumstick_2.check_for_hit(drum_pads)
 
+            mb.playChord([drumstick_1.check_for_hit(drum_pads)], 1, 48, onset=mb.getTime())
+            mb.playChord([drumstick_2.check_for_hit(drum_pads)], 1, 48, onset=mb.getTime())
+
+            '''
             frame = cv2.bitwise_and(frame, frame, mask=full_mask)
 
             frame = cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
+            '''
+
+            frame = np.full_like(frame, 255)
 
             # Draw marker for drumstick if it is tracked
             if drumstick_1.tracked:
@@ -254,7 +255,9 @@ while True:
                          tuple(np.add(drumstick_2.new_location, drumstick_2.get_velocity())), (0, 0, 200), 2)
 
             # Draw the user interface
-            frame = cv2.add(frame, user_interface)
+            draw_drumpads(frame)
+            #frame = cv2.add(frame, user_interface)
+            #frame = cv2.addWeighted(frame, 0.5, user_interface, 1, 1)
 
             cv2.imshow("Detecting drumsticks", frame)
 
