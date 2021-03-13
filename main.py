@@ -10,8 +10,11 @@ from midiBuffer import midiBuffer
 
 
 # Frame dimensions
-frame_width = 1280
-frame_height = 720
+frame_width = 640
+frame_height = 360
+frame_width_scaled = 1920
+frame_height_scaled = 1080
+scale_value = frame_width_scaled / frame_width
 
 # Set state to detect drumsticks
 state = "detect_drumsticks"
@@ -20,6 +23,12 @@ state = "detect_drumsticks"
 cap = cv2.VideoCapture(0)
 cap.set(3, frame_width)
 cap.set(4, frame_height)
+
+time.sleep(2)
+
+cap.set(15, -7.0)
+#cap.set(15, -1.0)
+#cap.set(15, 0)
 
 # Drumsticks
 drumstick_1 = drumstick.Drumstick()
@@ -31,14 +40,35 @@ fps = []
 # Create Drum pads
 drum_pads = []
 
-kick = drum_pad.DrumPad(((500, 600), (780, 600)), (0, 0, 255), 36)
+kick = drum_pad.DrumPad(
+    points=((int(frame_width*0.4), int(frame_height*0.8)), (int(frame_width*0.6), int(frame_height*0.8))),
+    colour=(0, 0, 255),
+    midi_note=36)
 drum_pads.append(kick)
 
-snare = drum_pad.DrumPad(((200, 500), (400, 600)), (0, 100, 255), 38)
+snare = drum_pad.DrumPad(
+    points=((int(frame_width*0.1), int(frame_height*0.7)), (int(frame_width*0.3), int(frame_height*0.8))),
+    colour=(0, 100, 255),
+    midi_note=38)
 drum_pads.append(snare)
 
-closed_hihat = drum_pad.DrumPad(((1080, 500), (880, 600)), (0, 255, 255), 42)
+closed_hihat = drum_pad.DrumPad(
+    points=((int(frame_width*0.7), int(frame_height*0.8)), (int(frame_width*0.9), int(frame_height*0.7))),
+    colour=(0, 255, 255),
+    midi_note=42)
 drum_pads.append(closed_hihat)
+
+open_hihat = drum_pad.DrumPad(
+    points=((int(frame_width*0.7), int(frame_height*0.2)), (int(frame_width*0.9), int(frame_height*0.3))),
+    colour=(0, 255, 0),
+    midi_note=46)
+#drum_pads.append(open_hihat)
+
+crash = drum_pad.DrumPad(
+    points=((int(frame_width*0.1), int(frame_height*0.3)), (int(frame_width*0.3), int(frame_height*0.2))),
+    colour=(255, 0, 0),
+    midi_note=49)
+#drum_pads.append(crash)
 
 '''
 # Empty array to hold user interface
@@ -54,10 +84,17 @@ for dp in drum_pads:
 def get_distance(pt1, pt2):
     return (((pt2[0] - pt1[0]) ** 2) + ((pt2[1] - pt1[1]) ** 2)) ** 0.5
 
-
+''' 
 def draw_drumpads(frame):
     for dp in drum_pads:
         cv2.line(frame, dp.pts[0], dp.pts[1], dp.colour, 2)
+'''
+
+
+def draw_drumpads(frame):
+    for dp in drum_pads:
+        cv2.line(frame, tuple([int(scale_value*p) for p in dp.pts[0]]), tuple([int(scale_value*p) for p in dp.pts[1]]),
+                 dp.colour, 4)
 
 
 while True:
@@ -71,8 +108,9 @@ while True:
 
     if state == "detect_drumsticks":
         # Detection box size
-        detect_box_height = 25
-        detect_box_width = 25
+        detect_box_height = frame_height/30
+        detect_box_width = frame_height/30
+
 
         # Detection box points
         detect_box_x1 = int((frame_width / 2) - (detect_box_height / 2))
@@ -117,8 +155,17 @@ while True:
             # Add the overlay
             frame = cv2.addWeighted(overlay, 0.9, frame, 0.1, 0)
 
+            '''
             # Draw detection box with border the same colour as the detected colour
             cv2.rectangle(frame, (detect_box_x1, detect_box_y1), (detect_box_x2, detect_box_y2), (b, g, r), 4)
+            '''
+
+            # Scale up frame
+            frame = cv2.resize(frame, (1920, 1080))
+
+            # Draw detection box with border the same colour as the detected colour
+            cv2.rectangle(frame, (detect_box_x1 * 3, detect_box_y1 * 3),
+                          (detect_box_x2 * 3, detect_box_y2 * 3), (b, g, r), 5)
 
             cv2.imshow("Detecting drumsticks", frame)
 
@@ -146,7 +193,7 @@ while True:
 
         params.filterByArea = False
         params.minArea = 0
-        params.maxArea = 1280*720
+        params.maxArea = frame_width*frame_height
 
         params.filterByColor = False
 
@@ -177,7 +224,8 @@ while True:
             frame = cv2.flip(frame, 1)
 
             # Blur to remove noise
-            frame = cv2.GaussianBlur(frame, (21, 21), 0)
+            #frame = cv2.GaussianBlur(frame, (21, 21), 0)
+            frame = cv2.GaussianBlur(frame, (int(frame_height/48), int(frame_height/48)), 0)
             #frame = cv2.fastNlMeansDenoisingColored(frame, h=1, templateWindowSize=3, searchWindowSize=5)
 
             # Convert to hsv
@@ -200,9 +248,11 @@ while True:
             full_mask = mask_1 + mask_2
 
             # Erode and dilate to remove noise
-            kernel = np.ones((5, 5), np.uint8)
+            #kernel = np.ones((5, 5), np.uint8)
+            kernel = np.ones(((int(frame_height/144)), int(frame_height/144)), np.uint8)
             full_mask = cv2.erode(full_mask, kernel, iterations=1)
-            kernel = np.ones((51, 51), np.uint8)
+            #kernel = np.ones((51, 51), np.uint8)
+            kernel = np.ones((int(frame_height/24), int(frame_height/24)), np.uint8)
             full_mask = cv2.dilate(full_mask, kernel, iterations=1)
 
             # Detect blobs
@@ -231,8 +281,14 @@ while True:
             #drumstick_1.check_for_hit(drum_pads)
             #drumstick_2.check_for_hit(drum_pads)
 
-            mb.playChord([drumstick_1.check_for_hit(drum_pads)], 1, 48, onset=mb.getTime())
-            mb.playChord([drumstick_2.check_for_hit(drum_pads)], 1, 48, onset=mb.getTime())
+            d1_hit = drumstick_1.check_for_hit(drum_pads)
+            d2_hit = drumstick_2.check_for_hit(drum_pads)
+
+            #mb.playChord([drumstick_1.check_for_hit(drum_pads)], 1, 127, onset=mb.getTime())
+            mb.playChord(notes=[d1_hit[0]], dur=1, vel=d1_hit[1], onset=mb.getTime())
+            mb.playChord(notes=[d2_hit[0]], dur=1, vel=d2_hit[1], onset=mb.getTime())
+            #mb.playChord([drumstick_2.check_for_hit(drum_pads)], 1, 200, onset=mb.getTime())
+            #mb.playChord([drumstick_2.check_for_hit(drum_pads)], 1, 48, onset=mb.getTime())
 
             '''
             frame = cv2.bitwise_and(frame, frame, mask=full_mask)
@@ -255,9 +311,15 @@ while True:
                          tuple(np.add(drumstick_2.new_location, drumstick_2.get_velocity())), (0, 0, 200), 2)
 
             # Draw the user interface
-            draw_drumpads(frame)
+            #draw_drumpads(frame)
             #frame = cv2.add(frame, user_interface)
             #frame = cv2.addWeighted(frame, 0.5, user_interface, 1, 1)
+
+            # Scale up frame
+            frame = cv2.resize(frame, (1920, 1080))
+
+            # Draw the drum pads
+            draw_drumpads(frame)
 
             cv2.imshow("Detecting drumsticks", frame)
 

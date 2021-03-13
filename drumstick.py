@@ -1,7 +1,7 @@
 import numpy as np
 
-frame_width = 1280
-frame_height = 720
+frame_width = 640
+frame_height = 360
 frame_center = (frame_width / 2, frame_height / 2)
 
 
@@ -79,7 +79,8 @@ class Drumstick:
         self.old_location = self.new_location
 
         # Define a search area size, this should change with frames_missing
-        search_area_size = 150
+        #search_area_size = 150
+        search_area_size = frame_height/5
 
         # Find the center of the search area by predicting where the drumstick is
         search_area_center = np.add(self.old_location, self.get_velocity())
@@ -92,9 +93,9 @@ class Drumstick:
 
         # Clamp the search area bounds
         search_area = {"min_x": 0 if search_area["min_x"] < 0 else search_area["min_x"],
-                       "max_x": 1280 if search_area["max_x"] > 1280 else search_area["max_x"],
+                       "max_x": frame_width if search_area["max_x"] > frame_width else search_area["max_x"],
                        "min_y": 0 if search_area["min_y"] < 0 else search_area["min_y"],
-                       "max_y": 720 if search_area["max_y"] > 720 else search_area["max_y"]}
+                       "max_y": frame_height if search_area["max_y"] > frame_height else search_area["max_y"]}
 
         # Initialise the best point to None
         best_point = None
@@ -151,10 +152,22 @@ class Drumstick:
         x, y = zip(*self.velocities)
         return [int(np.mean(x)), int(np.mean(y))]
 
+    def get_velocity_magnitude(self):
+        x, y = self.get_velocity()
+        vel = (np.mean(x)**2 + np.mean(y)**2)**0.5
+
+        # NewValue = (((OldValue - OldMin) * (NewMax - NewMin)) / (OldMax - OldMin)) + NewMin
+        scaled_vel = int((((vel - 0) * (127 - 0)) / (73 - 0)) + 0)
+        if scaled_vel > 127:
+            scaled_vel = 127
+
+        print(scaled_vel)
+        return scaled_vel
+
     def check_for_hit(self, drum_pads):
 
         if self.old_location is None:
-            return -1
+            return (-1, 0)
 
         for dp in drum_pads:
             # Get the drum pad points
@@ -168,5 +181,6 @@ class Drumstick:
                 if not same_side(self.old_location, self.new_location, dp_1, dp_2):
                     # Check if drum pad points are on different sides of the line from old_location to new_location
                     if not same_side(dp_1, dp_2, self.old_location, self.new_location):
-                        return dp.hit()
-        return -1
+                        #return dp.hit()
+                        return (dp.hit(), self.get_velocity_magnitude())
+        return (-1, 0)

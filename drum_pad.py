@@ -1,7 +1,7 @@
 import numpy as np
 
-frame_height = 720
-frame_width = 1280
+frame_width = 640
+frame_height = 360
 
 
 class DrumPad:
