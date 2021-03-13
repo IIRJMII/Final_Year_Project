@@ -70,25 +70,9 @@ crash = drum_pad.DrumPad(
     midi_note=49)
 #drum_pads.append(crash)
 
-'''
-# Empty array to hold user interface
-user_interface = np.zeros((frame_height, frame_width, 3), np.uint8)
-#cv2.line(user_interface, kick.pts[0], kick.pts[1], kick.colour, 2)
-
-
-for dp in drum_pads:
-    cv2.line(user_interface, dp.pts[0], dp.pts[1], dp.colour, 2)
-'''
-
 
 def get_distance(pt1, pt2):
     return (((pt2[0] - pt1[0]) ** 2) + ((pt2[1] - pt1[1]) ** 2)) ** 0.5
-
-''' 
-def draw_drumpads(frame):
-    for dp in drum_pads:
-        cv2.line(frame, dp.pts[0], dp.pts[1], dp.colour, 2)
-'''
 
 
 def draw_drumpads(frame):
@@ -154,11 +138,6 @@ while True:
 
             # Add the overlay
             frame = cv2.addWeighted(overlay, 0.9, frame, 0.1, 0)
-
-            '''
-            # Draw detection box with border the same colour as the detected colour
-            cv2.rectangle(frame, (detect_box_x1, detect_box_y1), (detect_box_x2, detect_box_y2), (b, g, r), 4)
-            '''
 
             # Scale up frame
             frame = cv2.resize(frame, (1920, 1080))
@@ -245,50 +224,31 @@ while True:
             if len(mask_bounds_2) > 1:
                 mask_2 += cv2.inRange(frame, np.array(mask_bounds_2[1][0]), np.array(mask_bounds_2[1][1]))
 
-            full_mask = mask_1 + mask_2
-
             # Erode and dilate to remove noise
-            #kernel = np.ones((5, 5), np.uint8)
-            kernel = np.ones(((int(frame_height/144)), int(frame_height/144)), np.uint8)
-            full_mask = cv2.erode(full_mask, kernel, iterations=1)
-            #kernel = np.ones((51, 51), np.uint8)
-            kernel = np.ones((int(frame_height/24), int(frame_height/24)), np.uint8)
-            full_mask = cv2.dilate(full_mask, kernel, iterations=1)
+            # kernel = np.ones((5, 5), np.uint8)
+            kernel = np.ones(((int(frame_height / 144)), int(frame_height / 144)), np.uint8)
+            mask_1 = cv2.erode(mask_1, kernel, iterations=1)
+            mask_2 = cv2.erode(mask_2, kernel, iterations=1)
+            # kernel = np.ones((51, 51), np.uint8)
+            kernel = np.ones((int(frame_height / 24), int(frame_height / 24)), np.uint8)
+            mask_1 = cv2.dilate(mask_1, kernel, iterations=1)
+            mask_2 = cv2.dilate(mask_2, kernel, iterations=1)
 
             # Detect blobs
-            keypoints = detector.detect(full_mask)
+            keypoints_mask_1 = detector.detect(mask_1)
+            keypoints_mask_2 = detector.detect(mask_2)
 
-            # Array to hold processed keypoints
-            my_keypoints = []
-
-            # Process the keypoints
-            for kp in keypoints:
-                my_keypoints.append(keypoint.Keypoint(kp.pt, kp.size))
-
-            # Update tracked drumsticks
-            if drumstick_1.tracked:
-                drumstick_1.update(my_keypoints)
-            if drumstick_2.tracked:
-                drumstick_2.update(my_keypoints)
-
-            # Find lost drumsticks
-            if not drumstick_1.tracked:
-                drumstick_1.find(my_keypoints)
-            if not drumstick_2.tracked:
-                drumstick_2.find(my_keypoints)
+            # Update drumsticks
+            drumstick_1.update(keypoints_mask_1)
+            drumstick_2.update(keypoints_mask_2)
 
             # Check for hits
-            #drumstick_1.check_for_hit(drum_pads)
-            #drumstick_2.check_for_hit(drum_pads)
-
             d1_hit = drumstick_1.check_for_hit(drum_pads)
             d2_hit = drumstick_2.check_for_hit(drum_pads)
 
-            #mb.playChord([drumstick_1.check_for_hit(drum_pads)], 1, 127, onset=mb.getTime())
+            # Play drum hits
             mb.playChord(notes=[d1_hit[0]], dur=1, vel=d1_hit[1], onset=mb.getTime())
             mb.playChord(notes=[d2_hit[0]], dur=1, vel=d2_hit[1], onset=mb.getTime())
-            #mb.playChord([drumstick_2.check_for_hit(drum_pads)], 1, 200, onset=mb.getTime())
-            #mb.playChord([drumstick_2.check_for_hit(drum_pads)], 1, 48, onset=mb.getTime())
 
             '''
             frame = cv2.bitwise_and(frame, frame, mask=full_mask)

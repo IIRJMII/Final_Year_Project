@@ -75,34 +75,35 @@ class Drumstick:
         return self.mask_bounds
 
     def update(self, keypoints):
-        # Set the current old_location to the previous new_location
-        self.old_location = self.new_location
+        # If the drumstick is currently being tracked
+        if self.tracked:
+            # Set the current old_location to the previous new_location
+            self.old_location = self.new_location
 
-        # Define a search area size, this should change with frames_missing
-        #search_area_size = 150
-        search_area_size = frame_height/5
+            # Define a search area size, this should change with frames_missing
+            #search_area_size = 150
+            search_area_size = frame_height/5
 
-        # Find the center of the search area by predicting where the drumstick is
-        search_area_center = np.add(self.old_location, self.get_velocity())
+            # Find the center of the search area by predicting where the drumstick is
+            search_area_center = np.add(self.old_location, self.get_velocity())
 
-        # Define the search area bounds
-        search_area = {"min_x": search_area_center[0] - search_area_size,
-                       "max_x": search_area_center[0] + search_area_size,
-                       "min_y": search_area_center[1] - search_area_size,
-                       "max_y": search_area_center[1] + search_area_size}
+            # Define the search area bounds
+            search_area = {"min_x": search_area_center[0] - search_area_size,
+                           "max_x": search_area_center[0] + search_area_size,
+                           "min_y": search_area_center[1] - search_area_size,
+                           "max_y": search_area_center[1] + search_area_size}
 
-        # Clamp the search area bounds
-        search_area = {"min_x": 0 if search_area["min_x"] < 0 else search_area["min_x"],
-                       "max_x": frame_width if search_area["max_x"] > frame_width else search_area["max_x"],
-                       "min_y": 0 if search_area["min_y"] < 0 else search_area["min_y"],
-                       "max_y": frame_height if search_area["max_y"] > frame_height else search_area["max_y"]}
+            # Clamp the search area bounds
+            search_area = {"min_x": 0 if search_area["min_x"] < 0 else search_area["min_x"],
+                           "max_x": frame_width if search_area["max_x"] > frame_width else search_area["max_x"],
+                           "min_y": 0 if search_area["min_y"] < 0 else search_area["min_y"],
+                           "max_y": frame_height if search_area["max_y"] > frame_height else search_area["max_y"]}
 
-        # Initialise the best point to None
-        best_point = None
+            # Initialise the best point to None
+            best_point = None
 
-        for kp in keypoints:
-            # If the keypoints has not been taken
-            if not kp.taken:
+            # Find the best point from the keypoints
+            for kp in keypoints:
                 # If the keypoint is within the search area
                 if search_area["min_x"] <= kp.pt[0] <= search_area["max_x"] and \
                         search_area["min_y"] <= kp.pt[1] <= search_area["max_y"]:
@@ -111,36 +112,32 @@ class Drumstick:
                     elif best_point.size < kp.size:
                         best_point = kp
 
-        # If a valid point has been found
-        if best_point is not None:
-            self.new_location = best_point.pt
-            self.update_velocity(np.subtract(self.new_location, self.old_location))
-            best_point.taken = True
-        # If a valid point has not been found
+            # If a valid point has been found
+            if best_point is not None:
+                self.new_location = [int(best_point.pt[0]), int(best_point.pt[1])]
+                self.update_velocity(np.subtract(self.new_location, self.old_location))
+            # If a valid point has not been found
+            else:
+                # Estimate the new location
+                #self.new_location = np.add(self.old_location, self.get_velocity())
+
+                self.frames_missing += 1
+                # If the drumstick has been lost for more than 10 frames it is considered lost
+                if self.frames_missing == 10:
+                    print("drumstick lost")
+                    self.frames_missing = 0
+                    self.tracked = False
+        # Drumstick is not currently being tracked and needs to be found
         else:
-            # Estimate the new location
-            #self.new_location = np.add(self.old_location, self.get_velocity())
+            # Sort by size descending
+            keypoints.sort(key=lambda x: x.size, reverse=True)
 
-            self.frames_missing += 1
-            # If the drumstick has been lost for more than 10 frames it is considered lost
-            if self.frames_missing == 10:
-                print("drumstick lost")
-                self.frames_missing = 0
-                self.tracked = False
-
-    def find(self, keypoints):
-        # Sort by size descending
-        keypoints.sort(key=lambda x: x.size, reverse=True)
-
-        # Take the largest blob that has not been taken already
-        for kp in keypoints:
-            if not kp.taken:
-                self.old_location = kp.pt
-                self.new_location = kp.pt
+            if len(keypoints) > 0:
+                kp = keypoints[0]
+                self.old_location = [int(kp.pt[0]), int(kp.pt[1])]
+                self.new_location = self.old_location
                 self.update_velocity([0, 0])
                 self.tracked = True
-                kp.taken = True
-                break
 
     def update_velocity(self, vel):
         self.velocities.append(vel)
