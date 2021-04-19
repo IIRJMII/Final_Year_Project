@@ -8,6 +8,8 @@ import drum_pad
 import keypoint
 from midiBuffer import midiBuffer
 
+# Draw debugging information
+debug = False
 
 # Frame dimensions
 frame_width = 640
@@ -19,6 +21,13 @@ scale_value = frame_width_scaled / frame_width
 # Set state to detect drumsticks
 state = "detect_drumsticks"
 
+# Whether we are using the drum wands or not
+drum_wands = False
+
+# Controls the UI for customising Drumpads
+drumpad_drawer_open = False
+drumpad_to_draw = "kick"
+
 # Set up the video feed
 cap = cv2.VideoCapture(0)
 cap.set(3, frame_width)
@@ -26,9 +35,10 @@ cap.set(4, frame_height)
 
 time.sleep(2)
 
-cap.set(15, -7.0)
-#cap.set(15, -1.0)
-#cap.set(15, 0)
+if drum_wands:
+    cap.set(15, -8.0)
+else:
+    cap.set(15, 0)
 
 # Drumsticks
 drumstick_1 = drumstick.Drumstick()
@@ -37,52 +47,393 @@ drumstick_2 = drumstick.Drumstick()
 # Array to hold FPS values
 fps = []
 
-# Create Drum pads
+# List to hold Drum pads
 drum_pads = []
+# List to hold Drum pad while it is being drawn [starting point, colour, midi note]
+drawing_drum_pad = {"active": False, "p1": (0, 0), "p2": (0, 0), "colour": (34, 87, 255), "midi_note": 36}
 
+# Create the default drum pads
 kick = drum_pad.DrumPad(
-    points=((int(frame_width*0.4), int(frame_height*0.8)), (int(frame_width*0.6), int(frame_height*0.8))),
-    colour=(0, 0, 255),
+    points=((0.4, 0.8), (0.6, 0.8)),
+    colour=(34, 87, 255),
     midi_note=36)
 drum_pads.append(kick)
 
 snare = drum_pad.DrumPad(
-    points=((int(frame_width*0.1), int(frame_height*0.7)), (int(frame_width*0.3), int(frame_height*0.8))),
-    colour=(0, 100, 255),
+    points=((0.1, 0.7), (0.3, 0.8)),
+    colour=(0, 152, 255),
     midi_note=38)
 drum_pads.append(snare)
 
 closed_hihat = drum_pad.DrumPad(
-    points=((int(frame_width*0.7), int(frame_height*0.8)), (int(frame_width*0.9), int(frame_height*0.7))),
-    colour=(0, 255, 255),
+    points=((0.7, 0.8), (0.9, 0.7)),
+    colour=(7, 193, 255),
     midi_note=42)
 drum_pads.append(closed_hihat)
 
 open_hihat = drum_pad.DrumPad(
-    points=((int(frame_width*0.7), int(frame_height*0.2)), (int(frame_width*0.9), int(frame_height*0.3))),
-    colour=(0, 255, 0),
+    points=((0.9, 0.2), (0.8, 0.6)),
+    colour=(136, 150, 0),
     midi_note=46)
-#drum_pads.append(open_hihat)
+drum_pads.append(open_hihat)
 
 crash = drum_pad.DrumPad(
-    points=((int(frame_width*0.1), int(frame_height*0.3)), (int(frame_width*0.3), int(frame_height*0.2))),
-    colour=(255, 0, 0),
+    points=((0.1, 0.2), (0.2, 0.6)),
+    colour=(181, 81, 63),
     midi_note=49)
-#drum_pads.append(crash)
+drum_pads.append(crash)
 
 
+# Returns the distance in pixels between two points
 def get_distance(pt1, pt2):
     return (((pt2[0] - pt1[0]) ** 2) + ((pt2[1] - pt1[1]) ** 2)) ** 0.5
 
 
-def draw_drumpads(frame):
+# Returns True if both points p1 and p2 are on the same side of the line l1 l2
+def same_side(p1, p2, l1, l2):
+    result_point_1 = np.sign((l2[0] - l1[0]) * (p1[1] - l2[1]) - (l2[1] - l1[1]) * (p1[0] - l2[0]))
+    result_point_2 = np.sign((l2[0] - l1[0]) * (p2[1] - l2[1]) - (l2[1] - l1[1]) * (p2[0] - l2[0]))
+    return result_point_1 == result_point_2
+
+
+# Draws horizontally and vertically centered text
+def draw_centered_text(img, xy, txt, scale, col):
+    text_size = cv2.getTextSize(txt, cv2.FONT_HERSHEY_DUPLEX, scale, 1)[0]
+
+    x = int(xy[0] - (text_size[0] / 2))
+    y = int(xy[1] + (text_size[1] / 2))
+
+    cv2.putText(img=img,
+                text=txt,
+                org=(x, y),
+                fontFace=cv2.FONT_HERSHEY_DUPLEX,
+                fontScale=scale,
+                color=col,
+                thickness=1,
+                lineType=cv2.LINE_AA)
+
+
+# Draws the drum pads
+def draw_drumpads(img):
+    (height, width, d) = img.shape
     for dp in drum_pads:
-        cv2.line(frame, tuple([int(scale_value*p) for p in dp.pts[0]]), tuple([int(scale_value*p) for p in dp.pts[1]]),
-                 dp.colour, 4)
+        cv2.line(
+            img=img,
+            pt1=(int(width*dp.pts[0][0]), int(height*dp.pts[0][1])),
+            pt2=(int(width*dp.pts[1][0]), int(height*dp.pts[1][1])),
+            color=dp.colour,
+            thickness=5,
+            lineType=cv2.LINE_AA)
+    if drawing_drum_pad["active"]:
+        cv2.line(
+            img=img,
+            pt1=(int(width*drawing_drum_pad["p1"][0]), int(height*drawing_drum_pad["p1"][1])),
+            pt2=(int(width*drawing_drum_pad["p2"][0]), int(height*drawing_drum_pad["p2"][1])),
+            color=drawing_drum_pad["colour"],
+            thickness=5,
+            lineType=cv2.LINE_AA)
+
+
+def draw_UI(img):
+    if state == "detect_drumsticks":
+        draw_centered_text(
+            img=img,
+            xy=(int(frame_width_scaled * 0.5), int(frame_height_scaled * 0.2)),
+            txt="Fill the square below with the coloured top of the first drumstick and press space.",
+            scale=1.25,
+            col=(0, 0, 0)
+        )
+        draw_centered_text(
+            img=img,
+            xy=(int(frame_width_scaled * 0.5), int(frame_height_scaled * 0.3)),
+            txt="Repeat the same process for the second drumstick.",
+            scale=1,
+            col=(0, 0, 0)
+        )
+    elif state == "track_drumsticks":
+        if drumpad_drawer_open:
+            # The background for the drum pad drawer
+            cv2.rectangle(
+                img=img,
+                pt1=(0, 0),
+                pt2=(frame_width_scaled, int(frame_height_scaled * 0.1)),
+                color=(70, 70, 70),
+                thickness=-1)
+            # Kick button
+            cv2.rectangle(
+                img=img,
+                pt1=(int(frame_width_scaled * (0.7/16)), 0),
+                pt2=(int(frame_width_scaled * (2.3/16)), int(frame_height_scaled * 0.1)),
+                color=(80, 80, 80) if drumpad_to_draw == "kick" else (70, 70, 70),
+                thickness=-1)
+            cv2.line(
+                img=img,
+                pt1=(int(frame_width_scaled * (0.8 / 16)), int(frame_height_scaled * 0.01)),
+                pt2=(int(frame_width_scaled * (2.2 / 16)), int(frame_height_scaled * 0.01)),
+                color=(34, 87, 255),
+                thickness=3)
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (1.5 / 16)), int(frame_height_scaled * 0.035)),
+                txt="Kick",
+                scale=0.75,
+                col=(255, 255, 255))
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (1.5 / 16)), int(frame_height_scaled * 0.07)),
+                txt="(36)",
+                scale=0.75,
+                col=(255, 255, 255))
+            # Snare button
+            cv2.rectangle(
+                img=img,
+                pt1=(int(frame_width_scaled * (2.7 / 16)), 0),
+                pt2=(int(frame_width_scaled * (4.3 / 16)), int(frame_height_scaled * 0.1)),
+                color=(80, 80, 80) if drumpad_to_draw == "snare" else (70, 70, 70),
+                thickness=-1)
+            cv2.line(
+                img=img,
+                pt1=(int(frame_width_scaled * (2.8 / 16)), int(frame_height_scaled * 0.01)),
+                pt2=(int(frame_width_scaled * (4.2 / 16)), int(frame_height_scaled * 0.01)),
+                color=(0, 152, 255),
+                thickness=3)
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (3.5 / 16)), int(frame_height_scaled * 0.035)),
+                txt="Snare",
+                scale=0.75,
+                col=(255, 255, 255))
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (3.5 / 16)), int(frame_height_scaled * 0.07)),
+                txt="(38)",
+                scale=0.75,
+                col=(255, 255, 255))
+            # Closed Hi-Hat button
+            cv2.rectangle(
+                img=img,
+                pt1=(int(frame_width_scaled * (4.7 / 16)), 0),
+                pt2=(int(frame_width_scaled * (6.3 / 16)), int(frame_height_scaled * 0.1)),
+                color=(80, 80, 80) if drumpad_to_draw == "closed_hihat" else (70, 70, 70),
+                thickness=-1)
+            cv2.line(
+                img=img,
+                pt1=(int(frame_width_scaled * (4.8 / 16)), int(frame_height_scaled * 0.01)),
+                pt2=(int(frame_width_scaled * (6.2 / 16)), int(frame_height_scaled * 0.01)),
+                color=(7, 193, 255),
+                thickness=3)
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (5.5 / 16)), int(frame_height_scaled * 0.035)),
+                txt="Closed Hi-Hat",
+                scale=0.75,
+                col=(255, 255, 255))
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (5.5 / 16)), int(frame_height_scaled * 0.07)),
+                txt="(42)",
+                scale=0.75,
+                col=(255, 255, 255))
+            # Open Hi-Hat button
+            cv2.rectangle(
+                img=img,
+                pt1=(int(frame_width_scaled * (6.7 / 16)), 0),
+                pt2=(int(frame_width_scaled * (8.3 / 16)), int(frame_height_scaled * 0.1)),
+                color=(80, 80, 80) if drumpad_to_draw == "open_hihat" else (70, 70, 70),
+                thickness=-1)
+            cv2.line(
+                img=img,
+                pt1=(int(frame_width_scaled * (6.8 / 16)), int(frame_height_scaled * 0.01)),
+                pt2=(int(frame_width_scaled * (8.2 / 16)), int(frame_height_scaled * 0.01)),
+                color=(136, 150, 0),
+                thickness=3)
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (7.5 / 16)), int(frame_height_scaled * 0.035)),
+                txt="Open Hi-Hat",
+                scale=0.75,
+                col=(255, 255, 255))
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (7.5 / 16)), int(frame_height_scaled * 0.07)),
+                txt="(46)",
+                scale=0.75,
+                col=(255, 255, 255))
+            # Crash button
+            cv2.rectangle(
+                img=img,
+                pt1=(int(frame_width_scaled * (8.7 / 16)), 0),
+                pt2=(int(frame_width_scaled * (10.3 / 16)), int(frame_height_scaled * 0.1)),
+                color=(80, 80, 80) if drumpad_to_draw == "crash" else (70, 70, 70),
+                thickness=-1)
+            cv2.line(
+                img=img,
+                pt1=(int(frame_width_scaled * (8.8 / 16)), int(frame_height_scaled * 0.01)),
+                pt2=(int(frame_width_scaled * (10.2 / 16)), int(frame_height_scaled * 0.01)),
+                color=(181, 81, 63),
+                thickness=3)
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (9.5 / 16)), int(frame_height_scaled * 0.035)),
+                txt="Crash",
+                scale=0.75,
+                col=(255, 255, 255))
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (9.5 / 16)), int(frame_height_scaled * 0.07)),
+                txt="(49)",
+                scale=0.75,
+                col=(255, 255, 255))
+            # Custom button
+            cv2.rectangle(
+                img=img,
+                pt1=(int(frame_width_scaled * (10.7 / 16)), 0),
+                pt2=(int(frame_width_scaled * (12.3 / 16)), int(frame_height_scaled * 0.1)),
+                color=(80, 80, 80) if drumpad_to_draw == "custom" else (70, 70, 70),
+                thickness=-1)
+            cv2.line(
+                img=img,
+                pt1=(int(frame_width_scaled * (10.8 / 16)), int(frame_height_scaled * 0.01)),
+                pt2=(int(frame_width_scaled * (12.2 / 16)), int(frame_height_scaled * 0.01)),
+                color=(34, 87, 255),
+                thickness=3)
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (11.5 / 16)), int(frame_height_scaled * 0.035)),
+                txt="Custom",
+                scale=0.75,
+                col=(255, 255, 255))
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (11.5 / 16)), int(frame_height_scaled * 0.07)),
+                txt="[ ]",
+                scale=0.75,
+                col=(255, 255, 255))
+            # Eraser button
+            cv2.rectangle(
+                img=img,
+                pt1=(int(frame_width_scaled * (12.7 / 16)), 0),
+                pt2=(int(frame_width_scaled * (14.3 / 16)), int(frame_height_scaled * 0.1)),
+                color=(80, 80, 80) if drumpad_to_draw == "eraser" else (70, 70, 70),
+                thickness=-1)
+            cv2.line(
+                img=img,
+                pt1=(int(frame_width_scaled * (12.8 / 16)), int(frame_height_scaled * 0.01)),
+                pt2=(int(frame_width_scaled * (14.2 / 16)), int(frame_height_scaled * 0.01)),
+                color=(157, 161, 245),
+                thickness=3)
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (13.5 / 16)), int(frame_height_scaled * 0.05)),
+                txt="Eraser",
+                scale=1,
+                col=(255, 255, 255))
+            # Close drumpad drawer button
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (15.5 / 16)), int(frame_height_scaled * 0.05)),
+                txt="Close",
+                scale=1,
+                col=(255, 255, 255))
+
+        else:
+            # Open drumpad drawer button
+            draw_centered_text(
+                img=frame,
+                xy=(int(frame_width_scaled * (15.5 / 16)), int(frame_height_scaled * 0.05)),
+                txt="Edit",
+                scale=1,
+                col=(0, 0, 0))
+
+
+def mouse_click(event, x, y, flags, param):
+    global drumpad_drawer_open, drumpad_to_draw
+    if event == cv2.EVENT_LBUTTONDOWN:
+        if not drumpad_drawer_open:
+            # If the click is on the open drumpad drawer button
+            if y <= frame_height_scaled * 0.1 and x >= frame_width_scaled * (15/16):
+                drumpad_drawer_open = True
+        else:
+            # If the click is on the drumpad drawer
+            if y <= frame_height_scaled * 0.1:
+                # If the click is on the close drumpad drawer button
+                if x >= frame_width_scaled * (15/16):
+                    drumpad_drawer_open = False
+                    drawing_drum_pad["active"] = False
+                # If the click is on the kick button
+                elif frame_width_scaled * (0.7/16) <= x <= frame_width_scaled * (2.3/16):
+                    drumpad_to_draw = "kick"
+                    drawing_drum_pad["active"] = False
+                    drawing_drum_pad["colour"] = (34, 87, 255)
+                    drawing_drum_pad["midi_note"] = 36
+                # If the click is on the snare button
+                elif frame_width_scaled * (2.7/16) <= x <= frame_width_scaled * (4.3/16):
+                    drumpad_to_draw = "snare"
+                    drawing_drum_pad["active"] = False
+                    drawing_drum_pad["colour"] = (0, 152, 255)
+                    drawing_drum_pad["midi_note"] = 38
+                # If the click is on the closed hi-hat button
+                elif frame_width_scaled * (4.7/16) <= x <= frame_width_scaled * (6.3/16):
+                    drumpad_to_draw = "closed_hihat"
+                    drawing_drum_pad["active"] = False
+                    drawing_drum_pad["colour"] = (7, 193, 255)
+                    drawing_drum_pad["midi_note"] = 42
+                # If the click is on the open hi-hat button
+                elif frame_width_scaled * (6.7/16) <= x <= frame_width_scaled * (8.3/16):
+                    drumpad_to_draw = "open_hihat"
+                    drawing_drum_pad["active"] = False
+                    drawing_drum_pad["colour"] = (136, 150, 0)
+                    drawing_drum_pad["midi_note"] = 46
+                # If the click is on the crash button
+                elif frame_width_scaled * (8.7/16) <= x <= frame_width_scaled * (10.3/16):
+                    drumpad_to_draw = "crash"
+                    drawing_drum_pad["active"] = False
+                    drawing_drum_pad["colour"] = (181, 81, 63)
+                    drawing_drum_pad["midi_note"] = 49
+                # If the click is on the custom button
+                elif frame_width_scaled * (10.7/16) <= x <= frame_width_scaled * (12.3/16):
+                    drumpad_to_draw = "custom"
+                    drawing_drum_pad["active"] = False
+                    drawing_drum_pad["colour"] = (181, 81, 63)
+                    drawing_drum_pad["midi_note"] = 36
+                # If the click is on the eraser button
+                elif frame_width_scaled * (12.7 / 16) <= x <= frame_width_scaled * (14.3 / 16):
+                    drumpad_to_draw = "eraser"
+                    drawing_drum_pad["active"] = False
+                    drawing_drum_pad["colour"] = (157, 161, 245)
+                    drawing_drum_pad["midi_note"] = 36
+            # If the click is not on the drumpad drawer
+            else:
+                # If there is no drumpad currently being drawn, begin to draw one
+                if not drawing_drum_pad["active"]:
+                    drawing_drum_pad["active"] = True
+                    drawing_drum_pad["p1"] = (x / frame_width_scaled, y / frame_height_scaled)
+                    drawing_drum_pad["p2"] = drawing_drum_pad["p1"]
+                # If there is a drumpad being drawn, create the drumpad
+                else:
+                    drawing_drum_pad["active"] = False
+
+                    if drumpad_to_draw == "eraser":
+                        for dp in drum_pads:
+                            # If the eraser line intersects the drum pad, delete the drum pad
+                            if not same_side(drawing_drum_pad["p1"], drawing_drum_pad["p2"], dp.pts[0], dp.pts[1]) and \
+                                    not same_side(dp.pts[0], dp.pts[1], drawing_drum_pad["p1"], drawing_drum_pad["p2"]):
+                                drum_pads.remove(dp)
+                    else:
+                        dp = drum_pad.DrumPad(
+                            points=(drawing_drum_pad["p1"], drawing_drum_pad["p2"]),
+                            colour=drawing_drum_pad["colour"],
+                            midi_note=drawing_drum_pad["midi_note"])
+                        drum_pads.append(dp)
+    elif event == cv2.EVENT_MOUSEMOVE:
+        if y > frame_height_scaled * 0.1:
+            if drawing_drum_pad["active"]:
+                drawing_drum_pad["p2"] = (x / frame_width_scaled, y / frame_height_scaled)
 
 
 while True:
     if state == "exit":
+        cap.set(15, 0)
         cap.release()
         cv2.destroyAllWindows()
         # Close the midi buffer if one has been created
@@ -94,7 +445,6 @@ while True:
         # Detection box size
         detect_box_height = frame_height/30
         detect_box_width = frame_height/30
-
 
         # Detection box points
         detect_box_x1 = int((frame_width / 2) - (detect_box_height / 2))
@@ -129,7 +479,7 @@ while True:
             g = int(255 * rgb_normalised[1])
             r = int(255 * rgb_normalised[0])
 
-            # Create white overlay with section missing for the detection region
+            # Create translucent white overlay with section missing for the detection region
             overlay = frame.copy()
             cv2.rectangle(overlay, (0, 0), (frame_width, detect_box_y1), (255, 255, 255), -1)
             cv2.rectangle(overlay, (0, 0), (detect_box_x1, frame_height), (255, 255, 255), -1)
@@ -145,6 +495,9 @@ while True:
             # Draw detection box with border the same colour as the detected colour
             cv2.rectangle(frame, (detect_box_x1 * 3, detect_box_y1 * 3),
                           (detect_box_x2 * 3, detect_box_y2 * 3), (b, g, r), 5)
+
+            # Draw UI
+            draw_UI(frame)
 
             cv2.imshow("Detecting drumsticks", frame)
 
@@ -239,12 +592,16 @@ while True:
             keypoints_mask_2 = detector.detect(mask_2)
 
             # Update drumsticks
-            drumstick_1.update(keypoints_mask_1)
-            drumstick_2.update(keypoints_mask_2)
+            drumstick_1.update(keypoints_mask_1, drum_wands)
+            drumstick_2.update(keypoints_mask_2, drum_wands)
 
             # Check for hits
+            '''
             d1_hit = drumstick_1.check_for_hit(drum_pads)
             d2_hit = drumstick_2.check_for_hit(drum_pads)
+            '''
+            d1_hit = drumstick_1.check_for_hit(drum_pads, frame.shape[0], frame.shape[1])
+            d2_hit = drumstick_2.check_for_hit(drum_pads, frame.shape[0], frame.shape[1])
 
             # Play drum hits
             mb.playChord(notes=[d1_hit[0]], dur=1, vel=d1_hit[1], onset=mb.getTime())
@@ -256,24 +613,38 @@ while True:
             frame = cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
             '''
 
-            frame = np.full_like(frame, 255)
+            #frame = np.full_like(frame, 255)
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
+
+            # Create translucent white overlay
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (frame_width, frame_height), (255, 255, 255), -1)
+
+            # Add the overlay
+            frame = cv2.addWeighted(overlay, 0.8, frame, 0.1, 0)
 
             # Draw marker for drumstick if it is tracked
             if drumstick_1.tracked:
-                cv2.circle(frame, tuple(drumstick_1.new_location), 10, (0, 255, 0), 10)
-                # Line to represent velocity for debugging purposes
-                cv2.line(frame, tuple(drumstick_1.new_location),
-                         tuple(np.add(drumstick_1.new_location, drumstick_1.get_velocity())), (0, 200, 0), 2)
+                cv2.circle(frame, tuple(drumstick_1.new_location), 10, (0, 255, 0), 10, cv2.LINE_AA)
+                if debug:
+                    # Line to represent velocity
+                    cv2.line(frame, tuple(drumstick_1.new_location),
+                             tuple(np.add(drumstick_1.new_location, drumstick_1.get_velocity())), (0, 200, 0), 2)
+                    # Box to represent search area
+                    s_a = drumstick_1.search_area
+                    x1, x2, y1, y2 = int(s_a["min_x"]), int(s_a["max_x"]), int(s_a["min_y"]), int(s_a["max_y"])
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 150, 0), 2)
             if drumstick_2.tracked:
-                cv2.circle(frame, tuple(drumstick_2.new_location), 10, (0, 0, 255), 10)
-                # Line to represent velocity for debugging purposes
-                cv2.line(frame, tuple(drumstick_2.new_location),
-                         tuple(np.add(drumstick_2.new_location, drumstick_2.get_velocity())), (0, 0, 200), 2)
-
-            # Draw the user interface
-            #draw_drumpads(frame)
-            #frame = cv2.add(frame, user_interface)
-            #frame = cv2.addWeighted(frame, 0.5, user_interface, 1, 1)
+                cv2.circle(frame, tuple(drumstick_2.new_location), 10, (0, 0, 255), 10, cv2.LINE_AA)
+                if debug:
+                    # Line to represent velocity for debugging purposes
+                    cv2.line(frame, tuple(drumstick_2.new_location),
+                             tuple(np.add(drumstick_2.new_location, drumstick_2.get_velocity())), (0, 0, 200), 2)
+                    # Box to represent search area
+                    s_a = drumstick_2.search_area
+                    x1, x2, y1, y2 = int(s_a["min_x"]), int(s_a["max_x"]), int(s_a["min_y"]), int(s_a["max_y"])
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 150), 2)
 
             # Scale up frame
             frame = cv2.resize(frame, (1920, 1080))
@@ -281,7 +652,11 @@ while True:
             # Draw the drum pads
             draw_drumpads(frame)
 
+            # Draw the UI
+            draw_UI(frame)
+
             cv2.imshow("Detecting drumsticks", frame)
+            cv2.setMouseCallback("Detecting drumsticks", mouse_click)
 
             key = cv2.waitKey(1)
             if key == ord('q'):
