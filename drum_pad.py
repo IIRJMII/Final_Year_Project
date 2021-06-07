@@ -9,14 +9,8 @@ class DrumPad:
         self.pts = points
         self.colour = colour
         self.midi_note = midi_note
-        #'''
         self.face_side = np.sign((points[1][0] - points[0][0]) * (0 - points[1][1]) -
-                                 (points[1][1] - points[0][1]) * ((frame_width / 2) - points[1][0]))
-        '''
-        self.face_side = np.sign((points[1][0] - points[0][0]) * ((frame_height / 2) - points[1][1]) -
-                                 (points[1][1] - points[0][1]) * ((frame_width / 2) - points[1][0]))
-        '''
-        self.x = 0
+                                 (points[1][1] - points[0][1]) * (0.5 - points[1][0]))
 
     def get_points(self):
         return self.pts
